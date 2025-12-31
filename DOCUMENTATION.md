@@ -1,308 +1,249 @@
 # Nuvio Provider Development Guide
 
-This is a comprehensive guide to developing streaming providers for the Nuvio app. It covers everything from setting up your environment to publishing your first provider.
+This comprehensive guide covers everything you need to know to build, debug, and publish streaming providers for the Nuvio app.
 
 ## Table of Contents
 
-1. [Introduction](#introduction)
-2. [Prerequisites](#prerequisites)
-3. [Architecture Overview](#architecture-overview)
-4. [Setting Up Your Workspace](#setting-up-your-workspace)
-5. [Tutorial: Building a Provider from Scratch](#tutorial-building-a-provider-from-scratch)
-6. [The Provider API](#the-provider-api)
-   - [Input Parameters](#input-parameters)
-   - [Output Format](#output-format)
-7. [Advanced Topics](#advanced-topics)
-   - [Async/Await & Transpilation](#asyncawait--transpilation)
-   - [HTML Parsing with Cheerio](#html-parsing-with-cheerio)
-   - [Handling Encryption](#handling-encryption)
-8. [Testing & Debugging](#testing--debugging)
-9. [Publishing](#publishing)
+1. [Introduction](#1-introduction)
+2. [Getting Started](#2-getting-started)
+   - [Setup](#setup)
+   - [Architecture](#architecture)
+3. [The Provider Template](#3-the-provider-template)
+4. [Development Workflows](#4-development-workflows)
+   - [Workflow A: Multi-File (Recommended)](#workflow-a-multi-file-recommended)
+   - [Workflow B: Single-File (Legacy/Simple)](#workflow-b-single-file-legacysimple)
+5. [The Build System](#5-the-build-system)
+   - [Bundling Source Providers](#bundling-source-providers)
+   - [Transpiling Async/Await](#transpiling-asyncawait)
+   - [Watch Mode](#watch-mode)
+6. [API Reference](#6-api-reference)
+7. [Testing & Debugging](#7-testing--debugging)
+8. [Publishing](#8-publishing)
+9. [FAQ & Troubleshooting](#9-faq--troubleshooting)
 
 ---
 
-## Introduction
+## 1. Introduction
 
-A **Provider** in Nuvio is a JavaScript module that finds video streams for movies and TV shows. When a user selects a title (e.g., "Inception"), the app calls your provider with the movie's TMDB ID. Your provider's job is to search the web (programmatically) and return a list of playable video URLs.
+A **Nuvio Provider** is a JavaScript module responsible for finding video streams. When a user taps a movie in the app, the provider receives the media details (TMDB ID, title, etc.) and returns a list of playable URLs.
 
-Providers run locally on the user's device inside the Nuvio app's JavaScript engine (Hermes).
+Providers run locally on the user's device. The Nuvio app uses the **Hermes** JavaScript engine.
 
----
-
-## Prerequisites
-
-To develop providers, you need:
-- **Node.js**: Version 16 or higher.
-- **Code Editor**: VS Code is recommended.
-- **Knowledge**: Basic JavaScript (ES6+), Promises, async/await, and HTTP requests.
+**Crucial Limitation:** Hermes does not natively support `async/await` syntax inside dynamically loaded code (plugins).
+**Our Solution:** We provide a build script that automatically transpiles your modern `async/await` code into generator functions that Hermes can execute safely.
 
 ---
 
-## Architecture Overview
+## 2. Getting Started
 
-Nuvio providers operate in a specific environment:
-- **Engine**: Hermes (React Native).
-- **Environment**: "Neutral" (neither distinct Browser nor Node.js, but supports common APIs like `fetch`).
-- **Restrictions**: 
-  - Cannot use native Node.js modules like `fs` or `path` inside the provider code.
-  - `async/await` has limited support in dynamically loaded code, so we use a build step to transpile it.
+### Setup
 
-### File Structure
-- **`src/`**: Where you write your code. One folder per provider (e.g., `src/vidlink/`).
-- **`providers/`**: Where the bundled code lives (e.g., `providers/vidlink.js`). **Do not edit these files manually.**
-- **`build.js`**: The script that converts your `src` code into the final `providers` file.
-
----
-
-## Setting Up Your Workspace
-
-1. **Clone the Repository**
-   ```bash
-   git clone https://github.com/tapframe/nuvio-providers.git
-   cd nuvio-providers
-   ```
-
-2. **Install Tools**
-   Install the build dependencies (esbuild, etc.):
-   ```bash
-   npm install
-   ```
-
----
-
-## Tutorial: Building a Provider from Scratch
-
-Let's build a fictional provider called **"StreamFlix"**.
-
-### Step 1: Create the Source Directory
-
-Create a folder for your source code:
-```bash
-mkdir -p src/streamflix
-```
-
-### Step 2: Create Utility Modules
-
-It is best practice to split your code. Let's create `src/streamflix/http.js` to handle networking.
-
-**`src/streamflix/http.js`**
-```javascript
-export const HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
-    "Referer": "https://streamflix.example/"
-};
-
-export async function fetchText(url) {
-    console.log(`[StreamFlix] Fetching: ${url}`);
-    const response = await fetch(url, { headers: HEADERS });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.text();
-}
-```
-
-### Step 3: Implement Extraction Logic
-
-Now create `src/streamflix/extractor.js` to find the video.
-
-**`src/streamflix/extractor.js`**
-```javascript
-import { fetchText, HEADERS } from './http.js';
-import cheerio from 'cheerio-without-node-native';
-
-export async function getMovieStream(tmdbId) {
-    // 1. Search for the movie
-    const searchUrl = `https://streamflix.example/search?id=${tmdbId}`;
-    const html = await fetchText(searchUrl);
-    
-    // 2. Parse HTML
-    const $ = cheerio.load(html);
-    const videoUrl = $('video#player source').attr('src');
-    
-    if (!videoUrl) return [];
-
-    // 3. Return a stream object
-    return [{
-        name: "StreamFlix",
-        title: "1080p - Server 1",
-        url: videoUrl,
-        quality: "1080p",
-        headers: HEADERS
-    }];
-}
-```
-
-### Step 4: Create the Entry Point
-
-Every provider needs an `index.js`. This is what the app calls.
-
-**`src/streamflix/index.js`**
-```javascript
-import { getMovieStream } from './extractor.js';
-
-async function getStreams(tmdbId, mediaType, season, episode) {
-    try {
-        if (mediaType === 'movie') {
-            return await getMovieStream(tmdbId);
-        } else {
-            // TV logic would go here
-            return [];
-        }
-    } catch (error) {
-        console.error(`[StreamFlix] Error: ${error.message}`);
-        return [];
-    }
-}
-
-module.exports = { getStreams };
-```
-
-### Step 5: Register in Manifest
-
-Open `manifest.json` and add your provider:
-
-```json
-{
-  "id": "streamflix",
-  "name": "StreamFlix",
-  "filename": "providers/streamflix.js",
-  "supportedTypes": ["movie"],
-  "enabled": true
-}
-```
-
-### Step 6: Build
-
-Run the build script to bundle your files into `providers/streamflix.js`:
-
-```bash
-node build.js streamflix
-```
-
-You should see: `✅ streamflix.js (XX KB)`
-
----
-
-## The Provider API
-
-Your `index.js` must export a function named `getStreams`.
-
-### Input Parameters
-
-```javascript
-async function getStreams(tmdbId, mediaType, season, episode)
-```
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `tmdbId` | String | The ID from The Movie Database (e.g., "872585"). |
-| `mediaType`| String | Either `"movie"` or `"tv"`. |
-| `season` | Number | Season number (for TV shows, e.g., 1). `null` for movies. |
-| `episode` | Number | Episode number (for TV shows, e.g., 1). `null` for movies. |
-
-### Output Format
-
-Return an **Array** of objects. Each object represents one playable link.
-
-```javascript
-[
-  {
-    "name": "StreamFlix",          // Provider Name
-    "title": "My Stream 1080p",    // Display Title
-    "url": "https://...",          // The actual video URL (.mp4, .m3u8)
-    "quality": "1080p",            // Label: "4K", "1080p", "720p", "CAM"
-    "size": 104857600,             // (Optional) Size in bytes
-    "headers": {                   // (Optional) Headers valid for playback
-      "User-Agent": "...",
-      "Referer": "..."
-    }
-  }
-]
-```
-
----
-
-## Advanced Topics
-
-### Async/Await & Transpilation
-
-**The Problem:** The Nuvio app loads plugins dynamically. The Hermes engine does not support `async` functions inside dynamically evaluated code.
-
-**The Solution:** The `build.js` script automatically solves this!
-- It converts your `async/await` code into Generator functions.
-- This allows you to write modern async code in `src/` without worrying about compatibility.
-- **Result:** Always use `src/` folders and the `build.js` script. Do not write complex single files manually in `providers/` unless you know what you are doing.
-
-### HTML Parsing with Cheerio
-
-We use `cheerio-without-node-native`. It implements a subset of jQuery core (like find, attr, text).
-
-```javascript
-import cheerio from 'cheerio-without-node-native';
-
-const $ = cheerio.load(htmlContent);
-const link = $('a.download-btn').attr('href');
-const title = $('.movie-title').text().trim();
-```
-
-### Handling Encryption
-
-Many streaming sites obfuscate their links. We include `crypto-js` to help.
-
-```javascript
-import CryptoJS from 'crypto-js';
-
-// Decrypt AES
-const bytes = CryptoJS.AES.decrypt(encryptedText, secretKey);
-const originalText = bytes.toString(CryptoJS.enc.Utf8);
-```
-
----
-
-## Testing & Debugging
-
-### Creating a Test Script
-
-Never rely on the app alone for debugging. Create a local test script:
-
-**`test-streamflix.js`**
-```javascript
-const { getStreams } = require('./providers/streamflix.js');
-
-async function test() {
-    console.log("Testing StreamFlix...");
-    
-    // Movie Test (Oppenheimer)
-    const streams = await getStreams('872585', 'movie');
-    console.log(`Found ${streams.length} streams`);
-    streams.forEach(s => console.log(`- ${s.title} (${s.quality})`));
-}
-
-test();
-```
-
-Run it:
-```bash
-node test-streamflix.js
-```
-
-### Debugging Tips
-- Use `console.log()` liberally. These logs appear in the terminal when running the test script, and in the Metro bundler output when running in the app.
-- Check headers. 90% of failures are due to missing `User-Agent` or `Referer` headers.
-
----
-
-## Publishing
-
-1. **Verify**: Ensure your test script passes for both Movies and TV shows.
-2. **Build**: Run `node build.js streamflix`.
-3. **Commit**:
+1.  **Clone the Repository**
     ```bash
-    git add src/streamflix providers/streamflix.js manifest.json
-    git commit -m "Add StreamFlix provider"
+    git clone https://github.com/tapframe/nuvio-providers.git
+    cd nuvio-providers
     ```
-4. **Push**: Push your changes to GitHub.
-5. **Update App**: Update the repository URL in the Nuvio app settings to point to your branch/repo.
+
+2.  **Install Dependencies**
+    This installs the build tools (`esbuild`) required for transpilation.
+    ```bash
+    npm install
+    ```
+
+### Architecture
+
+-   **`src/`**: The workspace for modern, multi-file providers.
+-   **`providers/`**: The distribution folder. The app reads files from here. **Do not edit these files manually if they were built from `src/`.**
+-   **`build.js`**: The utility script that builds and transpiles your code.
 
 ---
 
-Have fun building!
+## 3. The Provider Template
+
+We have included a starter template in `src/_template`. To create a new provider:
+
+1.  **Copy the template**
+    ```bash
+    cp -r src/_template src/my-new-provider
+    ```
+
+2.  **Rename/Edit files**
+    -   `src/my-new-provider/index.js`: The main entry point.
+    -   `src/my-new-provider/http.js`: Helper for network requests.
+    -   `src/my-new-provider/extractor.js`: Your scraping logic.
+
+---
+
+## 4. Development Workflows
+
+### Workflow A: Multi-File (Recommended)
+
+Best for complex providers. You write modern code in `src/`, split across multiple files.
+
+1.  **Develpop in `src/myprovider/`**.
+    You can use `import`/`export` and `async/await` freely.
+    ```javascript
+    // src/myprovider/index.js
+    import { getStream } from './extractor.js';
+    
+    async function getStreams(tmdbId, ...) {
+        return await getStream(tmdbId);
+    }
+    ```
+
+2.  **Build**
+    ```bash
+    node build.js myprovider
+    ```
+    This bundles everything into a single file at `providers/myprovider.js` and transpiles the async code.
+
+### Workflow B: Single-File (Legacy/Simple)
+
+If you have a simple script or are porting a provider from another project, you might have a single file in `providers/`.
+
+1.  **Develop in `providers/myprovider.js`**.
+    If you use `async/await`, it will **crash** the app unless you process it.
+
+2.  **Transpile**
+    Run the transpile command to convert the async code in-place:
+    ```bash
+    node build.js --transpile myprovider.js
+    ```
+    This rewrites `providers/myprovider.js` with Hermes-compatible code.
+
+---
+
+## 5. The Build System
+
+The `build.js` script is your primary tool. It handles two main jobs:
+1.  **Bundling**: Combines multiple files from `src/` into one.
+2.  **Transpiling**: Converts ES2017+ async/await into ES2016 Generators.
+
+### Bundling Source Providers
+
+Usage: `node build.js [provider_names...]`
+
+| Command | Description |
+|---------|-------------|
+| `node build.js` | Builds **ALL** providers found in `src/`. |
+| `node build.js vidlink` | Builds only the `src/vidlink` provider. |
+| `node build.js vidlink castle` | Builds multiple specific providers. |
+
+**Output**: Creates `providers/<name>.js`.
+
+### Transpiling Async/Await (Single Files)
+
+If you have a standalone file in `providers/` that uses `async/await`, you must transpile it.
+
+Usage: `node build.js --transpile [filenames...]`
+
+| Command | Description |
+|---------|-------------|
+| `node build.js --transpile` | Scans `providers/` for single files using async and transpiles them all. |
+| `node build.js --transpile old-scraper` | Transpiles `providers/old-scraper.js` in-place. |
+| `node build.js --transpile file1 file2` | Transpiles multiple specific files. |
+
+**Note**: This overwrites the file with the transpiled version. The original source is lost unless you keep a backup or use Git. This is why **Workflow A (src folder)** is recommended, as it keeps your source code separate from the build artifact.
+
+### Watch Mode
+
+Automatically rebuilds source providers when you modify files in `src/`.
+
+```bash
+npm run build:watch
+```
+
+---
+
+## 6. API Reference
+
+Your provider must export a `getStreams` function.
+
+```javascript
+/*
+ * @param {string} tmdbId - The TMDB ID (e.g., "550")
+ * @param {string} mediaType - "movie" or "tv"
+ * @param {number} season - Season number (1-based), null for movies
+ * @param {number} episode - Episode number (1-based), null for movies
+ * @returns {Promise<Array>} - List of streams
+ */
+async function getStreams(tmdbId, mediaType, season, episode) { ... }
+```
+
+### Stream Object
+
+```javascript
+{
+  "name": "MyProvider",            // Short identifier
+  "title": "1080p Stream",         // Display name
+  "url": "https://server.com/...", // Playable URL
+  "quality": "1080p",              // 4K, 1080p, 720p, CAM
+  "headers": {                     // (Optional)
+    "User-Agent": "Key for playback",
+    "Referer": "..."
+  }
+}
+```
+
+---
+
+## 7. Testing & Debugging
+
+**Never** rely on testing inside the app alone. It is slow and hard to debug.
+
+1.  **Create a local test file** (e.g., `test.js`):
+    ```javascript
+    const { getStreams } = require('./providers/myprovider.js');
+
+    async function run() {
+        console.log("Fetching streams...");
+        try {
+            const streams = await getStreams('550', 'movie'); // Fight Club
+            console.log(streams);
+        } catch (e) {
+            console.error(e);
+        }
+    }
+    run();
+    ```
+
+2.  **Run it**:
+    ```bash
+    node test.js
+    ```
+
+---
+
+## 8. Publishing
+
+1.  **Build your provider**: Ensure `providers/myprovider.js` is up to date.
+    ```bash
+    node build.js myprovider
+    ```
+2.  **Update Manifest**: Add your provider entry to `manifest.json`.
+3.  **Commit & Push**:
+    ```bash
+    git add .
+    git commit -m "Add new provider"
+    git push
+    ```
+
+Users can then use your raw GitHub repository URL to load the plugins in Nuvio.
+
+---
+
+## 9. FAQ & Troubleshooting
+
+### Error: `SyntaxError: async functions are unsupported`
+**Cause**: The app running on Hermes cannot execute `async function` directly in plugins.
+**Fix**: You forgot to build/transpile.
+- If using `src/`: Run `node build.js myprovider`.
+- If using single file: Run `node build.js --transpile myprovider.js`.
+
+### Error: `fetch is not defined` (in local testing)
+**Cause**: Node.js (before v18) doesn't have native `fetch`.
+**Fix**: Use Node v18+, or our build environment handles this for the app. For local testing, ensure you are on a recent Node version.
+
+### The app crashes when loading my provider
+**Cause**: Syntax error or unhandled exception at the root level.
+**Fix**: Check your `index.js`. Ensure you are not doing heavy work (like networking) at the top level. All logic must be inside `getStreams`.
