@@ -15,7 +15,7 @@ A collection of streaming providers for the Nuvio app. Providers are JavaScript 
    ```
 3. Refresh and enable the providers you want
 4. **Developer Mode**: To test local changes, run `npm start` on your computer.
-   - **Note:** You must use the **development build** of Nuvio (`npx expo run:android` or `npx expo run:ios`).
+   > ⚠️ **Important:** You must use the **development build** of Nuvio (`npx expo run:android` or `npx expo run:ios`). Some providers may work locally but fail in React Native.
    - Go to **Settings** > **Developer** > **Plugin Tester** in the app.
    - Enter your local server URL (e.g., `http://192.168.1.5:3000/manifest.json`).
    - You can also test individual provider URLs here.
