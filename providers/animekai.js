@@ -82,15 +82,17 @@ function decryptMegaMedia(embedUrl) {
 }
 
 // Get TMDB details to get the anime title
-function getTMDBDetails(tmdbId) {
-    var url = TMDB_BASE_URL + '/tv/' + tmdbId + '?api_key=' + TMDB_API_KEY;
+function getTMDBDetails(tmdbId, mediaType) {
+    var endpoint = (mediaType === 'movie') ? 'movie' : 'tv';
+    var url = TMDB_BASE_URL + '/' + endpoint + '/' + tmdbId + '?api_key=' + TMDB_API_KEY;
     return fetchRequest(url)
         .then(function (res) { return res.json(); })
         .then(function (data) {
+            var date = data.first_air_date || data.release_date || '';
             return {
-                title: data.name || data.original_name,
-                originalTitle: data.original_name,
-                year: data.first_air_date ? parseInt(data.first_air_date.split('-')[0]) : null
+                title: data.name || data.title || data.original_name,
+                originalTitle: data.original_name || data.original_title,
+                year: date ? parseInt(date.split('-')[0]) : null
             };
         })
         .catch(function () { return { title: null, originalTitle: null, year: null }; });
@@ -363,8 +365,8 @@ function runStreamFetch(token, rid) {
 
 // Main Nuvio entry
 function getStreams(tmdbId, mediaType, season, episode) {
-    // Only TV is supported for anime
-    if (mediaType !== 'tv') {
+    // Both TV and Movie are supported for anime
+    if (mediaType !== 'tv' && mediaType !== 'movie') {
         return Promise.resolve([]);
     }
 
@@ -375,7 +377,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
     var dbResult = null;
 
     // Step 1: Get anime title from TMDB
-    return getTMDBDetails(tmdbId)
+    return getTMDBDetails(tmdbId, mediaType)
         .then(function (tmdbData) {
             if (!tmdbData || !tmdbData.title) {
                 throw new Error('Could not get TMDB details');
@@ -383,10 +385,37 @@ function getStreams(tmdbId, mediaType, season, episode) {
             mediaInfo = tmdbData;
             logRid(rid, 'TMDB details', { title: tmdbData.title, year: tmdbData.year });
 
-            // Step 2: Search AniList to get MAL ID (with year for accuracy)
-            // Try original title first, then main title
+            // Step 2: Search AniList to get MAL ID
+            // Perfect Matching Strategy for Seasons > 1
             var searchTitle = tmdbData.originalTitle || tmdbData.title;
             var searchYear = tmdbData.year;
+
+            if (season > 1) {
+                logRid(rid, 'Seasonal search for S' + season);
+                return searchAniList(searchTitle + ' Season ' + season, null)
+                    .then(function (result) {
+                        if (result && result.malId) return result;
+                        if (searchTitle !== tmdbData.title) {
+                            return searchAniList(tmdbData.title + ' Season ' + season, null);
+                        }
+                        return null;
+                    })
+                    .then(function (seasonalResult) {
+                        if (seasonalResult) {
+                            logRid(rid, 'Seasonal match found', { malId: seasonalResult.malId });
+                            return seasonalResult;
+                        }
+                        // Fallback to standard search if seasonal search failed
+                        logRid(rid, 'Seasonal search failed, falling back to standard search');
+                        return searchAniList(searchTitle, searchYear).then(function (result) {
+                            if (result && result.malId) return result;
+                            if (searchTitle !== tmdbData.title) return searchAniList(tmdbData.title, searchYear);
+                            return searchAniList(searchTitle, null);
+                        });
+                    });
+            }
+
+            // Standard logic for Season 1 or fallback
             return searchAniList(searchTitle, searchYear).then(function (result) {
                 if (result && result.malId) {
                     return result;
