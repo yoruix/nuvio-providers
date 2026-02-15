@@ -71,55 +71,77 @@ function getSyncInfo(id, mediaType, season, episode) {
     } else {
         // Use TMDB ID ONLY to find the IMDb ID
         var tmdbBase = TMDB_BASE_URL + '/' + (mediaType === 'movie' ? 'movie' : 'tv') + '/' + id;
-        var getExternalId = (mediaType === 'movie')
-            ? fetchRequest(tmdbBase + '?api_key=' + TMDB_API_KEY).then(function(res) { return res.json(); }).then(function(d) { return d.imdb_id; })
-            : fetchRequest(tmdbBase + '/external_ids?api_key=' + TMDB_API_KEY).then(function(res) { return res.json(); }).then(function(d) { return d.imdb_id; });
+        var getDetails = fetchRequest(tmdbBase + (mediaType === 'movie' ? '' : '/external_ids') + '?api_key=' + TMDB_API_KEY).then(function(res) { return res.json(); });
+        var getBaseInfo = fetchRequest(tmdbBase + '?api_key=' + TMDB_API_KEY).then(function(res) { return res.json(); });
 
-        return getExternalId
-            .catch(function() { return null; })
-            .then(function(imdbId) {
-                if (imdbId) return imdbId;
+        return Promise.all([getDetails, getBaseInfo])
+            .then(function(results) {
+                var details = results[0];
+                var base = results[1];
+                var imdbId = details.imdb_id || null;
+                var title = base.name || base.title || null;
+
+                if (imdbId) return { imdbId: imdbId, title: title };
                 
                 // Fallback: Try ARM API if TMDB doesn't provide IMDb ID
                 logRid('ArmSync: TMDB missing IMDb ID, trying ARM fallback for ' + id);
                 return fetchRequest(ARM_BASE + '/themoviedb?id=' + id)
                     .then(function(res) { return res.json(); })
                     .then(function(armData) {
-                        if (Array.isArray(armData) && armData.length > 0) {
-                            return armData[0].imdb || null;
-                        }
-                        return null;
+                        var fallback = (Array.isArray(armData) && armData.length > 0) ? armData[0].imdb : null;
+                        return { imdbId: fallback, title: title };
                     })
-                    .catch(function() { return null; });
+                    .catch(function() { return { imdbId: null, title: title }; });
             })
-            .then(function(imdbId) {
-                if (!imdbId) throw new Error('No IMDb ID found for TMDB ' + id);
-                return getCinemetaDate(imdbId).then(function(date) {
-                    if (date) return { imdbId: imdbId, releaseDate: date };
-                    throw new Error('Could not find release date on Cinemata for IMDb ' + imdbId);
+            .then(function(info) {
+                if (!info.imdbId && !id) throw new Error('No IDs found for TMDB ' + id);
+                return getCinemetaDate(info.imdbId || id).then(function(date) {
+                    if (date) return { imdbId: info.imdbId, tmdbId: id, releaseDate: date, title: info.title };
+                    throw new Error('Could not find release date on Cinemata for IDs');
                 });
             });
     }
 }
 
-function resolveByDate(imdbId, releaseDateStr, rid) {
+function resolveByDate(imdbId, releaseDateStr, rid, tmdbId, season) {
     if (!releaseDateStr || !/^\d{4}-\d{2}-\d{2}/.test(releaseDateStr)) {
         return Promise.resolve(null);
     }
 
-    logRid(rid, 'ArmSync: Resolving IMDb ' + imdbId + ' for date ' + releaseDateStr);
+    logRid(rid, 'ArmSync: Resolving for date ' + releaseDateStr + ' (TMDB: ' + tmdbId + ', IMDb: ' + imdbId + ')');
 
-    return fetchRequest(ARM_BASE + '/imdb?id=' + imdbId)
-        .then(function (res) { return res.json(); })
-        .then(function (armData) {
-            var malIds = armData.map(function (e) { return e.myanimelist; }).filter(Boolean);
-            if (malIds.length === 0) return null;
+    var getCandidates = function() {
+        if (tmdbId) {
+            return fetchRequest(ARM_BASE + '/themoviedb?id=' + tmdbId)
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (Array.isArray(data) && data.length > 0) return data;
+                    throw new Error('No TMDB match');
+                })
+                .catch(function() {
+                    if (!imdbId) return [];
+                    return fetchRequest(ARM_BASE + '/imdb?id=' + imdbId)
+                        .then(function(res) { return res.json(); })
+                        .catch(function() { return []; });
+                });
+        } else if (imdbId) {
+            return fetchRequest(ARM_BASE + '/imdb?id=' + imdbId)
+                .then(function(res) { return res.json(); })
+                .catch(function() { return []; });
+        }
+        return Promise.resolve([]);
+    };
 
-            logRid(rid, 'ArmSync: Candidates ' + malIds.join(', '));
+    return getCandidates().then(function (armData) {
+        var malIds = Array.from(new Set(armData.map(function (e) { return e.myanimelist; }).filter(Boolean)));
+        
+        if (malIds.length === 0) return null;
 
-            var sequence = Promise.resolve(null);
-            malIds.forEach(function (malId) {
-                sequence = sequence.then(function (found) {
+        logRid(rid, 'ArmSync: Candidates ' + malIds.join(', '));
+
+        var sequence = Promise.resolve(null);
+        malIds.forEach(function (malId) {
+            sequence = sequence.then(function (found) {
                     if (found) return found;
 
                     return new Promise(function (resolve) { setTimeout(resolve, 500); })
@@ -134,13 +156,19 @@ function resolveByDate(imdbId, releaseDateStr, rid) {
 
                             var isMatch = false;
                             if (startStr) {
-                                var startLimit = new Date(startStr);
-                                startLimit.setDate(startLimit.getDate() - 2);
-                                var startLimitStr = startLimit.toISOString().split('T')[0];
-
-                                if (releaseDateStr >= startLimitStr) {
-                                    if (!endStr || releaseDateStr <= endStr) {
-                                        isMatch = true;
+                                var targetDate = new Date(releaseDateStr);
+                                var startDate = new Date(startStr);
+                                var diffDays = Math.ceil(Math.abs(targetDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+                                
+                                // For movies/specials, we want a very close match (within 2 days)
+                                if (anime.type === 'Movie' || anime.type === 'Special' || anime.episodes === 1) {
+                                    if (diffDays <= 2) isMatch = true;
+                                } else {
+                                    // For series, it just needs to have started before or on the release date
+                                    var startLimit = new Date(startStr);
+                                    startLimit.setDate(startLimit.setDate(startLimit.getDate() - 2));
+                                    if (releaseDateStr >= startLimit.toISOString().split('T')[0]) {
+                                        if (!endStr || releaseDateStr <= endStr) isMatch = true;
                                     }
                                 }
                             }
@@ -517,7 +545,7 @@ function getStreams(id, mediaType, season, episode) {
     } else {
         resolveTask = getSyncInfo(id, mediaType, season, episode)
             .then(function (syncInfo) {
-                return resolveByDate(syncInfo.imdbId, syncInfo.releaseDate, rid);
+                return resolveByDate(syncInfo.imdbId, syncInfo.releaseDate, rid, syncInfo.tmdbId, season);
             });
     }
 

@@ -13,20 +13,24 @@ Anime seasonal structures vary wildly between platforms. A single "Season 3" on 
 2. **IMDb -> Air Date**: Query **Cinemata** (`https://v3-cinemeta.strem.io/meta/series/{imdbId}.json`) to get the exact `released` date for the target `season` and `episode`.
 
 ### Phase 2: Candidate Resolution
-1. **ARM Lookup**: Use the **ARM API** (`https://arm.haglund.dev/api/v2/imdb?id={imdbId}`) to get a list of MyAnimeList (MAL) ID candidates.
+1. **Sequential ARM Lookup**: Query the **ARM API** to get a list of MyAnimeList (MAL) ID candidates.
+   - **Primary**: Query by TMDB ID (`/api/v2/themoviedb?id={tmdbId}`). This is highly effective for Season 0 specials.
+   - **Fallback**: If no candidates are found, query by IMDb ID (`/api/v2/imdb?id={imdbId}`).
 
 ### Phase 3: Date-Based Validation
 1. **Jikan Filtering**: For each MAL ID candidate, fetch its details from **Jikan** (`https://api.jikan.moe/v4/anime/{malId}`).
-2. **Range Check**: Compare the episode's `releaseDate` against the MAL entry's `aired.from` and `aired.to` dates.
-3. **Episode Mapping**: Once the correct MAL ID is found, fetch its episode list (`/anime/{malId}/episodes`) and find the absolute episode number that matches the air date (within a 2-day tolerance for timezones).
+2. **Tolerance-Based Match**: Compare the episode's `releaseDate` against the MAL entry's air date using a **2-day tolerance** (to account for timezones).
+   - **For Series**: Match the `releaseDate` against the MAL entry's start/end range.
+   - **For Movies/Specials**: Ensure the MAL `aired.from` date is within +/- 2 days of the Target Date.
+3. **Episode Mapping**: Once the correct MAL ID is found, find the absolute episode number (for series, fetch the `/episodes` list).
 
 ## Required APIs
 
 | API | Purpose | Endpoint |
 | :--- | :--- | :--- |
-| **TMDB** | ID Mapping | TV: `/tv/{id}/external_ids` <br> Movie: `/movie/{id}` |
+| **TMDB** | Metadata & ID | TV: `/tv/{id}` <br> External IDs: `/tv/{id}/external_ids` |
 | **Cinemata** | Air Dates | Series: `/meta/series/{id}.json` <br> Movie: `/meta/movie/{id}.json` |
-| **ARM** | ID Cross-Ref | `/api/v2/imdb?id={imdbId}` |
+| **ARM** | ID Cross-Ref | TMDB: `/api/v2/themoviedb?id={id}` <br> IMDb: `/api/v2/imdb?id={id}` |
 | **Jikan** | MAL Data | `/v4/anime/{malId}` |
 
 ## Handling Movies vs. Series
