@@ -8,7 +8,8 @@ Anime seasonal structures vary wildly between platforms. A single "Season 3" on 
 ## The "ArmSync" Workflow
 
 ### Phase 1: Metadata Acquisition
-1. **TMDB -> IMDb**: Resolve the TMDB ID to an IMDb ID (`tt...`) using the TMDB `/external_ids` endpoint.
+1. **TMDB -> IMDb**: Resolve the TMDB ID to an IMDb ID (`tt...`) using the TMDB `/external_ids` endpoint. 
+   - **Fallback**: If TMDB returns no IMDb ID, query the **ARM API** (`https://arm.haglund.dev/api/v2/themoviedb?id={tmdbId}`) and extract the `imdb` field from the first matching entry.
 2. **IMDb -> Air Date**: Query **Cinemata** (`https://v3-cinemeta.strem.io/meta/series/{imdbId}.json`) to get the exact `released` date for the target `season` and `episode`.
 
 ### Phase 2: Candidate Resolution

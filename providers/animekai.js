@@ -78,6 +78,21 @@ function getSyncInfo(id, mediaType, season, episode) {
         return getExternalId
             .catch(function() { return null; })
             .then(function(imdbId) {
+                if (imdbId) return imdbId;
+                
+                // Fallback: Try ARM API if TMDB doesn't provide IMDb ID
+                logRid('ArmSync: TMDB missing IMDb ID, trying ARM fallback for ' + id);
+                return fetchRequest(ARM_BASE + '/themoviedb?id=' + id)
+                    .then(function(res) { return res.json(); })
+                    .then(function(armData) {
+                        if (Array.isArray(armData) && armData.length > 0) {
+                            return armData[0].imdb || null;
+                        }
+                        return null;
+                    })
+                    .catch(function() { return null; });
+            })
+            .then(function(imdbId) {
                 if (!imdbId) throw new Error('No IMDb ID found for TMDB ' + id);
                 return getCinemetaDate(imdbId).then(function(date) {
                     if (date) return { imdbId: imdbId, releaseDate: date };
