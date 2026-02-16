@@ -1,85 +1,42 @@
 # Anime Synchronization Guide (ArmSync)
 
-This document describes the high-fidelity synchronization logic used to match Anime content from TMDB/IMDb to MyAnimeList (MAL) for precise scraping.
+This document describes the high-fidelity synchronization logic used to match Anime content from TMDB/IMDb to AniList for precise scraping.
 
 ## Why this is necessary
-Anime seasonal structures vary wildly between platforms. A single "Season 3" on TMDB might be split into three different entries on MyAnimeList. Title-based matching is unreliable for these cases.
+Anime seasonal structures vary wildly between platforms. A single "Season 3" on TMDB might be split into three different entries on AniList. Title-based mapping is unreliable without date verification.
 
 ## The "ArmSync" Workflow
 
 ### Phase 1: Metadata Acquisition
-1. **TMDB -> IMDb**: Resolve the TMDB ID to an IMDb ID (`tt...`) using the TMDB `/external_ids` endpoint. 
-   - **Fallback**: If TMDB returns no IMDb ID, query the **ARM API** (`https://arm.haglund.dev/api/v2/themoviedb?id={tmdbId}`) and extract the `imdb` field from the first matching entry.
-2. **IMDb -> Air Date**: Query **Cinemata** (`https://v3-cinemeta.strem.io/meta/series/{imdbId}.json`) to get the exact `released` date for the target `season` and `episode`.
+1. **Target Date & Title**: Query **Cinemata** (`https://v3-cinemeta.strem.io/meta/series/{imdbId}.json`) to get the exact `released` date and `name` (title) for the target `season` and `episode`.
+   - **ID Fallback**: If TMDB lacks an IMDb ID, the **ARM API** (`/themoviedb?id={id}`) is queried to resolve the IMDb link first.
 
 ### Phase 2: Candidate Resolution
-1. **Sequential ARM Lookup**: Query the **ARM API** to get a list of MyAnimeList (MAL) ID candidates.
-   - **Primary**: Query by TMDB ID (`/api/v2/themoviedb?id={tmdbId}`). This is highly effective for Season 0 specials.
-   - **Fallback**: If no candidates are found, query by IMDb ID (`/api/v2/imdb?id={imdbId}`).
+1. **AniList Title Search**: Query the **AniList GraphQL API** using the show's title from TMDB.
+2. **Bulk Discovery**: This returns all related AniList entries (TV, OVA, Special, Movie) in a single request.
 
-### Phase 3: Date-Based Validation
-1. **Jikan Filtering**: For each MAL ID candidate, fetch its details from **Jikan** (`https://api.jikan.moe/v4/anime/{malId}`).
-2. **Tolerance-Based Match**: Compare the episode's `releaseDate` against the MAL entry's air date using a **2-day tolerance** (to account for timezones).
-   - **For Series**: Match the `releaseDate` against the MAL entry's start/end range.
-   - **For Movies/Specials**: Ensure the MAL `aired.from` date is within +/- 2 days of the Target Date.
-3. **Episode Mapping**: Once the correct MAL ID is found, find the absolute episode number (for series, fetch the `/episodes` list).
+### Phase 3: Date & Title Validation
+1. **Air Date Match**: Compare the episode's `releaseDate` against the `startDate` and `endDate` of every AniList candidate.
+   - **Tolerance**: A **2-day grace period** is allowed to account for timezone differences.
+2. **Title Tie-Breaker**: If multiple episodes match the same date, the scraper compares the **Cinemata Episode Title** against the **AniList Episode Titles** to pick the correct part.
+3. **Database Sync**: The scraper then queries the streaming backend using the verified **AniList ID**.
 
 ## Required APIs
 
 | API | Purpose | Endpoint |
 | :--- | :--- | :--- |
-| **TMDB** | Metadata & ID | TV: `/tv/{id}` <br> External IDs: `/tv/{id}/external_ids` |
-| **Cinemata** | Air Dates | Series: `/meta/series/{id}.json` <br> Movie: `/meta/movie/{id}.json` |
-| **ARM** | ID Cross-Ref | TMDB: `/api/v2/themoviedb?id={id}` <br> IMDb: `/api/v2/imdb?id={id}` |
-| **Jikan** | MAL Data | `/v4/anime/{malId}` |
+| **TMDB** | Metadata | `/tv/{id}` |
+| **Cinemata** | Air Dates | `/meta/series/{id}.json` |
+| **ARM** | ID Fallback | `/api/v2/themoviedb?id={id}` |
+| **AniList** | Discovery | `https://graphql.anilist.co` |
 
-## Handling Movies vs. Series
+## Reference Implementation (Logic)
 
-### Series Logic
-For series, you must match the `releaseDate` against the MAL entry's date range, then fetch the `/episodes` list to find the absolute episode number that corresponds to that date.
-
-### Movie & Single-EP Logic
-If the Jikan response indicates `type: "Movie"` or `episodes: 1`, you can skip the episode list check.
-- **MAL ID**: Use the matched candidate.
-- **Episode Number**: Always assume `1`.
-
-## Reference Implementation (JS)
-
-```javascript
-// 1. Get Air Date from Cinemata
-async function getAirDate(imdbId, season, episode) {
-    const res = await fetch(`https://v3-cinemeta.strem.io/meta/series/${imdbId}.json`);
-    const data = await res.json();
-    const video = data.meta.videos.find(v => v.season == season && v.episode == episode);
-    return video ? video.released.split('T')[0] : null;
-}
-
-// 2. Resolve via ARM & Jikan
-async function resolveMAL(imdbId, releaseDate) {
-    const armRes = await fetch(`https://arm.haglund.dev/api/v2/imdb?id=${imdbId}`);
-    const malIds = (await armRes.json()).map(e => e.myanimelist).filter(Boolean);
-
-    for (const malId of malIds) {
-        const jikanRes = await fetch(`https://api.jikan.moe/v4/anime/${malId}`);
-        const anime = (await jikanRes.json()).data;
-        
-        // Match logic: releaseDate must be between anime.aired.from and anime.aired.to
-        if (isDateInRange(releaseDate, anime.aired)) {
-            // Movies/Single-EPs don't need episode list checks
-            if (anime.type === "Movie" || anime.episodes === 1) {
-                return { malId, episode: 1 };
-            }
-
-            const epsRes = await fetch(`https://api.jikan.moe/v4/anime/${malId}/episodes`);
-            const episodes = (await epsRes.json()).data;
-            const match = episodes.find(ep => isSameDay(ep.aired, releaseDate));
-            if (match) return { malId, episode: match.mal_id };
-        }
-    }
-}
-```
+1. **Phase 1**: Get `TargetDate` + `TargetTitle` from Cinemata.
+2. **Phase 2**: `Candidates = SearchAniList(ShowName)`.
+3. **Phase 3**: `Match = Candidates.Find(c => IsDateInRange(TargetDate, c.Aired) && MatchTitle(TargetTitle, c.Title))`.
 
 ## Benefits
-- **No Manual Mapping**: Works automatically for new releases.
-- **Handles "Parts"**: Correcty identifies "Season 1 Part 2" vs "Season 2".
-- **Absolute Numbering**: Automatically converts TMDB S2E5 to MAL Episode 30 (or whatever is correct).
+- **No Manual Mapping**: Bypasses mapping gaps in ARM/IMDb.
+- **Specials Support**: Correctly identifies Season 0 content by searching across all production formats.
+- **Split Part Support**: Handles episodes split into "Special 1" and "Special 2" via title matching.
