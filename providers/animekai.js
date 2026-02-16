@@ -102,29 +102,35 @@ function getSyncInfo(id, mediaType, season, episode) {
                 var imdbId = details.imdb_id || null;
                 var title = base.name || base.title || null;
 
-                if (imdbId) return { imdbId: imdbId, title: title };
+                if (imdbId) return { imdbId: imdbId, title: title, movieDate: base.release_date || null };
                 
                 logRid('ArmSync: TMDB missing IMDb ID, trying ARM fallback for ' + id);
                 return fetchRequest(ARM_BASE + '/themoviedb?id=' + id)
                     .then(function(res) { return res.json(); })
                     .then(function(armData) {
                         var fallback = (Array.isArray(armData) && armData.length > 0) ? armData[0].imdb : null;
-                        return { imdbId: fallback, title: title };
+                        return { imdbId: fallback, title: title, movieDate: base.release_date || null };
                     })
-                    .catch(function() { return { imdbId: null, title: title }; });
+                    .catch(function() { return { imdbId: null, title: title, movieDate: base.release_date || null }; });
             })
             .then(function(info) {
                 if (!info.imdbId) throw new Error('No IMDb ID found for TMDB ' + id);
                 return getCinemetaInfo(info.imdbId).then(function(cMeta) {
-                    if (cMeta.date) return { 
+                    var finalDate = cMeta.date;
+                    // For movies, TMDB's release date is usually the original (correct) one
+                    if (mediaType === 'movie' && info.movieDate) {
+                        finalDate = info.movieDate;
+                    }
+
+                    if (finalDate) return { 
                         imdbId: info.imdbId, 
                         tmdbId: id, 
-                        releaseDate: cMeta.date, 
+                        releaseDate: finalDate, 
                         title: info.title, 
                         episodeTitle: cMeta.title,
                         dayIndex: cMeta.dayIndex 
                     };
-                    throw new Error('Could not find release date on Cinemata for ID ' + info.imdbId);
+                    throw new Error('Could not find release date on Cinemata or TMDB for ID ' + info.imdbId);
                 });
             });
     }
