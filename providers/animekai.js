@@ -557,11 +557,21 @@ function getStreams(id, mediaType, season, episode) {
                 if (!dbData) throw new Error('AniList ID ' + syncResult.alId + ' not found in provider database');
                 
                 var token = null;
-                var epStr = String(syncResult.dayIndex || syncResult.episode); // Prefer dayIndex for specials
+                var epStr = String(syncResult.dayIndex || syncResult.episode); 
                 var seasons = dbData.episodes || {};
                 
-                // 1. Try Title Match in Database (Highly accurate for split specials)
-                if (syncResult.title) {
+                // 1. Try numeric match first (User's specific selection)
+                var keys = Object.keys(seasons);
+                for (var i = 0; i < keys.length; i++) {
+                    if (seasons[keys[i]][epStr]) {
+                        token = seasons[keys[i]][epStr].token;
+                        logRid(rid, 'Database: Numeric match success #' + epStr);
+                        break;
+                    }
+                }
+
+                // 2. Fallback to Title Match if numeric match fails
+                if (!token && syncResult.title) {
                     var cleanTarget = syncResult.title.toLowerCase().replace(/[^a-z0-9]/g, '');
                     Object.keys(seasons).forEach(function(sKey) {
                         Object.keys(seasons[sKey]).forEach(function(eKey) {
@@ -570,23 +580,12 @@ function getStreams(id, mediaType, season, episode) {
                             if (cleanDb && (cleanDb.indexOf(cleanTarget) !== -1 || cleanTarget.indexOf(cleanDb) !== -1)) {
                                 if (!token) {
                                     token = ep.token;
-                                    epStr = eKey; // Update epStr for display
+                                    epStr = eKey; 
                                     logRid(rid, 'Database: Title match success #' + eKey + ' (' + ep.title + ')');
                                 }
                             }
                         });
                     });
-                }
-
-                // 2. Fallback to numeric match if no title match found
-                if (!token) {
-                    var keys = Object.keys(seasons);
-                    for (var i = 0; i < keys.length; i++) {
-                        if (seasons[keys[i]][epStr]) {
-                            token = seasons[keys[i]][epStr].token;
-                            break;
-                        }
-                    }
                 }
 
                 if (!token) throw new Error('Episode ' + epStr + ' token not found for AniList ID ' + syncResult.alId);
