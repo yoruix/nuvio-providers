@@ -55,14 +55,28 @@ function getSyncInfo(id, mediaType, season, episode) {
             .then(function(data) {
                 var meta = data.meta;
                 if (!meta) throw new Error('No Cinemata metadata');
-                if (mediaType === 'movie') return { date: meta.released ? meta.released.split('T')[0] : null, title: meta.name };
+                if (mediaType === 'movie') return { date: meta.released ? meta.released.split('T')[0] : null, title: meta.name, dayIndex: 1 };
+                
                 var videos = meta.videos || [];
                 var target = videos.find(function(v) { return v.season == season && v.episode == episode; });
-                return { 
-                    date: (target && target.released) ? target.released.split('T')[0] : null,
-                    title: (target && target.name) ? target.name : null
-                };
-            }).catch(function() { return { date: null, title: null }; });
+                if (!target || !target.released) return { date: null, title: null, dayIndex: 1 };
+
+                var targetDate = target.released.split('T')[0];
+                var targetTitle = target.name || null;
+                
+                // Day Index logic: find how many episodes aired on the same day BEFORE this one
+                var dayIndex = 1;
+                for (var i = 0; i < videos.length; i++) {
+                    var v = videos[i];
+                    if (v.season == season && v.released && v.released.split('T')[0] === targetDate) {
+                        if (parseInt(v.episode) < parseInt(episode)) {
+                            dayIndex++;
+                        }
+                    }
+                }
+
+                return { date: targetDate, title: targetTitle, dayIndex: dayIndex };
+            }).catch(function() { return { date: null, title: null, dayIndex: 1 }; });
     };
 
     // Helper to get details from TMDB
@@ -73,7 +87,7 @@ function getSyncInfo(id, mediaType, season, episode) {
 
     if (isImdb) {
         return getCinemetaInfo(id).then(function(info) {
-            if (info.date) return { imdbId: id, releaseDate: info.date, episodeTitle: info.title };
+            if (info.date) return { imdbId: id, releaseDate: info.date, episodeTitle: info.title, dayIndex: info.dayIndex };
             throw new Error('Could not find release date on Cinemata');
         });
     } else {
@@ -102,19 +116,26 @@ function getSyncInfo(id, mediaType, season, episode) {
             .then(function(info) {
                 if (!info.imdbId) throw new Error('No IMDb ID found for TMDB ' + id);
                 return getCinemetaInfo(info.imdbId).then(function(cMeta) {
-                    if (cMeta.date) return { imdbId: info.imdbId, tmdbId: id, releaseDate: cMeta.date, title: info.title, episodeTitle: cMeta.title };
+                    if (cMeta.date) return { 
+                        imdbId: info.imdbId, 
+                        tmdbId: id, 
+                        releaseDate: cMeta.date, 
+                        title: info.title, 
+                        episodeTitle: cMeta.title,
+                        dayIndex: cMeta.dayIndex 
+                    };
                     throw new Error('Could not find release date on Cinemata for ID ' + info.imdbId);
                 });
             });
     }
 }
 
-function resolveByDate(releaseDateStr, rid, showTitle, season, episodeTitle) {
+function resolveByDate(releaseDateStr, rid, showTitle, season, episodeTitle, dayIndex) {
     if (!releaseDateStr || !/^\d{4}-\d{2}-\d{2}/.test(releaseDateStr)) {
         return Promise.resolve(null);
     }
 
-    logRid(rid, 'ArmSync: Resolving for date ' + releaseDateStr + ' (Show: ' + showTitle + ')');
+    logRid(rid, 'ArmSync: Resolving for date ' + releaseDateStr + ' (Show: ' + showTitle + ', DayIndex: ' + dayIndex + ')');
 
     // Step 1: Search AniList by Title to get candidates
     var query = 'query($search:String){Page(perPage:20){media(search:$search,type:ANIME){id type format title{romaji english}startDate{year month day}endDate{year month day}episodes streamingEpisodes{title}}}}';
@@ -162,7 +183,10 @@ function resolveByDate(releaseDateStr, rid, showTitle, season, episodeTitle) {
             if (isMatch) {
                 logRid(rid, 'ArmSync: Match found AniList ID ' + anime.id + ' (' + (anime.title.english || anime.title.romaji) + ')');
                 
-                var episodeNum = 1;
+                // Use dayIndex as the default episode number if multiple parts exist
+                var episodeNum = dayIndex || 1;
+                
+                // Still try title tie-breaker if available for even better precision
                 var episodes = anime.streamingEpisodes || [];
                 if (episodes.length > 1 && episodeTitle) {
                     var cleanTarget = episodeTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -176,7 +200,7 @@ function resolveByDate(releaseDateStr, rid, showTitle, season, episodeTitle) {
                     }
                 }
                 
-                return { alId: anime.id, episode: episodeNum, title: episodeTitle };
+                return { alId: anime.id, episode: episodeNum, title: episodeTitle, dayIndex: dayIndex };
             }
         }
         return null;
@@ -518,7 +542,7 @@ function getStreams(id, mediaType, season, episode) {
     } else {
         resolveTask = getSyncInfo(id, mediaType, season, episode)
             .then(function (syncInfo) {
-                return resolveByDate(syncInfo.releaseDate, rid, syncInfo.title, season, syncInfo.episodeTitle);
+                return resolveByDate(syncInfo.releaseDate, rid, syncInfo.title, season, syncInfo.episodeTitle, syncInfo.dayIndex);
             });
     }
 
@@ -533,7 +557,7 @@ function getStreams(id, mediaType, season, episode) {
                 if (!dbData) throw new Error('AniList ID ' + syncResult.alId + ' not found in provider database');
                 
                 var token = null;
-                var epStr = String(syncResult.episode);
+                var epStr = String(syncResult.dayIndex || syncResult.episode); // Prefer dayIndex for specials
                 var seasons = dbData.episodes || {};
                 
                 // 1. Try Title Match in Database (Highly accurate for split specials)

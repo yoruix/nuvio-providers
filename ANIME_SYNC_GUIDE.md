@@ -10,6 +10,7 @@ Anime seasonal structures vary wildly between platforms. A single "Season 3" on 
 ### Phase 1: Metadata Acquisition
 1. **Target Date & Title**: Query **Cinemata** (`https://v3-cinemeta.strem.io/meta/series/{imdbId}.json`) to get the exact `released` date and `name` (title) for the target `season` and `episode`.
    - **ID Fallback**: If TMDB lacks an IMDb ID, the **ARM API** (`/themoviedb?id={id}`) is queried to resolve the IMDb link first.
+2. **Day Index Calculation**: Calculate the **Release Order** of the episode for that specific day (e.g., if two episodes aired on `2025-12-30`, Episode 15 is index `1`, Episode 16 is index `2`).
 
 ### Phase 2: Candidate Resolution
 1. **AniList Title Search**: Query the **AniList GraphQL API** using the show's title from TMDB.
@@ -20,23 +21,25 @@ Anime seasonal structures vary wildly between platforms. A single "Season 3" on 
    - **Tolerance**: A **2-day grace period** is allowed to account for timezone differences.
 2. **Title Tie-Breaker**: If multiple episodes match the same date, the scraper compares the **Cinemata Episode Title** against the **AniList Episode Titles** to pick the correct part.
 3. **Database Sync**: The scraper then queries the streaming backend using the verified **AniList ID**.
+   - **Token Selection**: Uses **Title Match** first, then falls back to **Day Index** to select the correct video file for split specials.
 
 ## Required APIs
 
 | API | Purpose | Endpoint |
 | :--- | :--- | :--- |
 | **TMDB** | Metadata | `/tv/{id}` |
-| **Cinemata** | Air Dates | `/meta/series/{id}.json` |
+| **Cinemata** | Air Dates & Indexing | `/meta/series/{id}.json` |
 | **ARM** | ID Fallback | `/api/v2/themoviedb?id={id}` |
 | **AniList** | Discovery | `https://graphql.anilist.co` |
 
 ## Reference Implementation (Logic)
 
-1. **Phase 1**: Get `TargetDate` + `TargetTitle` from Cinemata.
+1. **Phase 1**: Get `TargetDate`, `TargetTitle`, and `DayIndex` from Cinemata.
 2. **Phase 2**: `Candidates = SearchAniList(ShowName)`.
-3. **Phase 3**: `Match = Candidates.Find(c => IsDateInRange(TargetDate, c.Aired) && MatchTitle(TargetTitle, c.Title))`.
+3. **Phase 3**: `Match = Candidates.Find(c => IsDateInRange(TargetDate, c.Aired))`.
+4. **Phase 4**: `Token = Database.Find(Match.ID).Select(ep => MatchTitle(ep.Title) || MatchIndex(ep.Index))`.
 
 ## Benefits
 - **No Manual Mapping**: Bypasses mapping gaps in ARM/IMDb.
 - **Specials Support**: Correctly identifies Season 0 content by searching across all production formats.
-- **Split Part Support**: Handles episodes split into "Special 1" and "Special 2" via title matching.
+- **Split Part Support**: Handles episodes split into "Special 1" and "Special 2" via **Title Matching** and **Day Indexing**.
