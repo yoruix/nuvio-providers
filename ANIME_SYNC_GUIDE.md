@@ -24,7 +24,7 @@ Anime seasonal structures vary wildly between platforms. A single "Season 3" on 
    - **Tolerance**: A **2-day grace period** is allowed to account for timezone differences.
 2. **Title Tie-Breaker**: If multiple episodes match the same date, the scraper compares the **Cinemata Episode Title** against the **AniList Episode Titles** to pick the correct part.
 3. **Database Sync**: The scraper then queries the streaming backend using the verified **AniList ID**.
-   - **Token Selection**: Uses **Day Index** first (numerical order) to ensure the correct part is selected for split specials, with **Title Match** as a reliable fallback.
+   - **Token Selection**: Prioritizes the **Original Episode Number** for standard TV series to ensure consistency. For specials or multi-part releases, it uses the **Day Index** (numerical order) and **Title Match** as highly accurate fallbacks.
 
 ## Required APIs
 
