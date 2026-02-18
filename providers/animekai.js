@@ -87,7 +87,7 @@ function getSyncInfo(id, mediaType, season, episode) {
 
     if (isImdb) {
         return getCinemetaInfo(id).then(function(info) {
-            if (info.date) return { imdbId: id, releaseDate: info.date, episodeTitle: info.title, dayIndex: info.dayIndex };
+            if (info.date) return { imdbId: id, releaseDate: info.date, episodeTitle: info.title, dayIndex: info.dayIndex, episode: episode };
             throw new Error('Could not find release date on Cinemata');
         });
     } else {
@@ -128,7 +128,8 @@ function getSyncInfo(id, mediaType, season, episode) {
                         releaseDate: finalDate, 
                         title: info.title, 
                         episodeTitle: cMeta.title,
-                        dayIndex: cMeta.dayIndex 
+                        dayIndex: cMeta.dayIndex,
+                        episode: episode
                     };
                     throw new Error('Could not find release date on Cinemata or TMDB for ID ' + info.imdbId);
                 });
@@ -136,7 +137,7 @@ function getSyncInfo(id, mediaType, season, episode) {
     }
 }
 
-function resolveByDate(releaseDateStr, rid, showTitle, season, episodeTitle, dayIndex) {
+function resolveByDate(releaseDateStr, rid, showTitle, season, episodeTitle, dayIndex, originalEpisode) {
     if (!releaseDateStr || !/^\d{4}-\d{2}-\d{2}/.test(releaseDateStr)) {
         return Promise.resolve(null);
     }
@@ -189,8 +190,9 @@ function resolveByDate(releaseDateStr, rid, showTitle, season, episodeTitle, day
             if (isMatch) {
                 logRid(rid, 'ArmSync: Match found AniList ID ' + anime.id + ' (' + (anime.title.english || anime.title.romaji) + ')');
                 
-                // Use dayIndex as the default episode number if multiple parts exist
-                var episodeNum = dayIndex || 1;
+                // For movies/specials, use dayIndex. For TV shows, use the episode number.
+                var isTV = anime.format !== 'MOVIE' && anime.format !== 'SPECIAL' && anime.episodes !== 1;
+                var episodeNum = (isTV && originalEpisode) ? originalEpisode : (dayIndex || 1);
                 
                 // Still try title tie-breaker if available for even better precision
                 var episodes = anime.streamingEpisodes || [];
@@ -548,7 +550,7 @@ function getStreams(id, mediaType, season, episode) {
     } else {
         resolveTask = getSyncInfo(id, mediaType, season, episode)
             .then(function (syncInfo) {
-                return resolveByDate(syncInfo.releaseDate, rid, syncInfo.title, season, syncInfo.episodeTitle, syncInfo.dayIndex);
+                return resolveByDate(syncInfo.releaseDate, rid, syncInfo.title, season, syncInfo.episodeTitle, syncInfo.dayIndex, episode);
             });
     }
 
@@ -563,7 +565,7 @@ function getStreams(id, mediaType, season, episode) {
                 if (!dbData) throw new Error('AniList ID ' + syncResult.alId + ' not found in provider database');
                 
                 var token = null;
-                var epStr = String(syncResult.dayIndex || syncResult.episode); 
+                var epStr = String(syncResult.episode || syncResult.dayIndex || 1); 
                 var seasons = dbData.episodes || {};
                 
                 // 1. Try numeric match first (User's specific selection)
