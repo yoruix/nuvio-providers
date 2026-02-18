@@ -360,7 +360,10 @@ function qualityFromResolutionOrBandwidth(stream) {
 }
 
 function resolveM3U8(url, serverType, serverName) {
-    return fetchRequest(url, { headers: Object.assign({}, HEADERS, { 'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL,application/octet-stream,*/*' }) })
+    return fetchRequest(url, { 
+        skipSizeCheck: true,
+        headers: Object.assign({}, HEADERS, { 'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL,application/octet-stream,*/*' }) 
+    })
         .then(function (res) { return res.text(); })
         .then(function (content) {
             if (content.indexOf('#EXT-X-STREAM-INF') !== -1) {
