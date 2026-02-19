@@ -1,5 +1,5 @@
 // AnimeKai Scraper for Nuvio Local Scrapers
-// React Native compatible - Uses ArmSync for 100% accurate matching
+// React Native compatible - Uses AniList Title Search + Date Matching for 100% accuracy
 
 const TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
@@ -14,7 +14,6 @@ const API = 'https://enc-dec.app/api';
 const DB_API = 'https://enc-dec.app/db/kai';
 const KAI_AJAX = 'https://animekai.to/ajax';
 const ARM_BASE = 'https://arm.haglund.dev/api/v2';
-const JIKAN_BASE = 'https://api.jikan.moe/v4';
 
 // Debug helpers
 function createRequestId() {
@@ -43,12 +42,12 @@ function fetchRequest(url, options) {
     });
 }
 
-// Resolve metadata via ARM and Jikan for perfect matching
+// Resolve metadata via AniList Search for perfect matching
 function getSyncInfo(id, mediaType, season, episode) {
     var isImdb = typeof id === 'string' && id.indexOf('tt') === 0;
     
-    // Helper to get date from Cinemata
-    var getCinemetaDate = function(imdbId) {
+    // Helper to get date and title from Cinemata
+    var getCinemetaInfo = function(imdbId) {
         var cinemetaType = (mediaType === 'movie') ? 'movie' : 'series';
         var cinemetaUrl = 'https://v3-cinemeta.strem.io/meta/' + cinemetaType + '/' + imdbId + '.json';
         return fetchRequest(cinemetaUrl)
@@ -56,134 +55,168 @@ function getSyncInfo(id, mediaType, season, episode) {
             .then(function(data) {
                 var meta = data.meta;
                 if (!meta) throw new Error('No Cinemata metadata');
-                if (mediaType === 'movie') return meta.released ? meta.released.split('T')[0] : null;
+                if (mediaType === 'movie') return { date: meta.released ? meta.released.split('T')[0] : null, title: meta.name, dayIndex: 1 };
+                
                 var videos = meta.videos || [];
                 var target = videos.find(function(v) { return v.season == season && v.episode == episode; });
-                return (target && target.released) ? target.released.split('T')[0] : null;
-            }).catch(function() { return null; });
+                if (!target || !target.released) return { date: null, title: null, dayIndex: 1 };
+
+                var targetDate = target.released.split('T')[0];
+                var targetTitle = target.name || null;
+                
+                // Day Index logic: find how many episodes aired on the same day BEFORE this one
+                var dayIndex = 1;
+                for (var i = 0; i < videos.length; i++) {
+                    var v = videos[i];
+                    if (v.season == season && v.released && v.released.split('T')[0] === targetDate) {
+                        if (parseInt(v.episode) < parseInt(episode)) {
+                            dayIndex++;
+                        }
+                    }
+                }
+
+                return { date: targetDate, title: targetTitle, dayIndex: dayIndex };
+            }).catch(function() { return { date: null, title: null, dayIndex: 1 }; });
+    };
+
+    // Helper to get details from TMDB
+    var getTmdbInfo = function() {
+        var tmdbUrl = TMDB_BASE_URL + '/' + (mediaType === 'movie' ? 'movie' : 'tv') + '/' + id + '?api_key=' + TMDB_API_KEY;
+        return fetchRequest(tmdbUrl).then(function(res) { return res.json(); });
     };
 
     if (isImdb) {
-        return getCinemetaDate(id).then(function(date) {
-            if (date) return { imdbId: id, releaseDate: date };
+        return getCinemetaInfo(id).then(function(info) {
+            if (info.date) return { imdbId: id, releaseDate: info.date, episodeTitle: info.title, dayIndex: info.dayIndex, episode: episode };
             throw new Error('Could not find release date on Cinemata');
         });
     } else {
-        // Use TMDB ID ONLY to find the IMDb ID
         var tmdbBase = TMDB_BASE_URL + '/' + (mediaType === 'movie' ? 'movie' : 'tv') + '/' + id;
-        var getExternalId = (mediaType === 'movie')
-            ? fetchRequest(tmdbBase + '?api_key=' + TMDB_API_KEY).then(function(res) { return res.json(); }).then(function(d) { return d.imdb_id; })
-            : fetchRequest(tmdbBase + '/external_ids?api_key=' + TMDB_API_KEY).then(function(res) { return res.json(); }).then(function(d) { return d.imdb_id; });
+        var getDetails = fetchRequest(tmdbBase + (mediaType === 'movie' ? '' : '/external_ids') + '?api_key=' + TMDB_API_KEY).then(function(res) { return res.json(); });
+        var getBaseInfo = fetchRequest(tmdbBase + '?api_key=' + TMDB_API_KEY).then(function(res) { return res.json(); });
 
-        return getExternalId
-            .catch(function() { return null; })
-            .then(function(imdbId) {
-                if (imdbId) return imdbId;
+        return Promise.all([getDetails, getBaseInfo])
+            .then(function(results) {
+                var details = results[0];
+                var base = results[1];
+                var imdbId = details.imdb_id || null;
+                var title = base.name || base.title || null;
+
+                if (imdbId) return { imdbId: imdbId, title: title, movieDate: base.release_date || null };
                 
-                // Fallback: Try ARM API if TMDB doesn't provide IMDb ID
                 logRid('ArmSync: TMDB missing IMDb ID, trying ARM fallback for ' + id);
                 return fetchRequest(ARM_BASE + '/themoviedb?id=' + id)
                     .then(function(res) { return res.json(); })
                     .then(function(armData) {
-                        if (Array.isArray(armData) && armData.length > 0) {
-                            return armData[0].imdb || null;
-                        }
-                        return null;
+                        var fallback = (Array.isArray(armData) && armData.length > 0) ? armData[0].imdb : null;
+                        return { imdbId: fallback, title: title, movieDate: base.release_date || null };
                     })
-                    .catch(function() { return null; });
+                    .catch(function() { return { imdbId: null, title: title, movieDate: base.release_date || null }; });
             })
-            .then(function(imdbId) {
-                if (!imdbId) throw new Error('No IMDb ID found for TMDB ' + id);
-                return getCinemetaDate(imdbId).then(function(date) {
-                    if (date) return { imdbId: imdbId, releaseDate: date };
-                    throw new Error('Could not find release date on Cinemata for IMDb ' + imdbId);
+            .then(function(info) {
+                if (!info.imdbId) throw new Error('No IMDb ID found for TMDB ' + id);
+                return getCinemetaInfo(info.imdbId).then(function(cMeta) {
+                    var finalDate = cMeta.date;
+                    // For movies, TMDB's release date is usually the original (correct) one
+                    if (mediaType === 'movie' && info.movieDate) {
+                        finalDate = info.movieDate;
+                    }
+
+                    if (finalDate) return { 
+                        imdbId: info.imdbId, 
+                        tmdbId: id, 
+                        releaseDate: finalDate, 
+                        title: info.title, 
+                        episodeTitle: cMeta.title,
+                        dayIndex: cMeta.dayIndex,
+                        episode: episode
+                    };
+                    throw new Error('Could not find release date on Cinemata or TMDB for ID ' + info.imdbId);
                 });
             });
     }
 }
 
-function resolveByDate(imdbId, releaseDateStr, rid) {
+function resolveByDate(releaseDateStr, rid, showTitle, season, episodeTitle, dayIndex, originalEpisode) {
     if (!releaseDateStr || !/^\d{4}-\d{2}-\d{2}/.test(releaseDateStr)) {
         return Promise.resolve(null);
     }
 
-    logRid(rid, 'ArmSync: Resolving IMDb ' + imdbId + ' for date ' + releaseDateStr);
+    logRid(rid, 'ArmSync: Resolving for date ' + releaseDateStr + ' (Show: ' + showTitle + ', DayIndex: ' + dayIndex + ')');
 
-    return fetchRequest(ARM_BASE + '/imdb?id=' + imdbId)
-        .then(function (res) { return res.json(); })
-        .then(function (armData) {
-            var malIds = armData.map(function (e) { return e.myanimelist; }).filter(Boolean);
-            if (malIds.length === 0) return null;
+    // Step 1: Search AniList by Title to get candidates
+    var query = 'query($search:String){Page(perPage:20){media(search:$search,type:ANIME){id type format title{romaji english}startDate{year month day}endDate{year month day}episodes streamingEpisodes{title}}}}';
+    
+    return fetchRequest(ANILIST_URL, {
+        method: 'POST',
+        headers: Object.assign({}, HEADERS, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ query: query, variables: { search: showTitle } })
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(json) {
+        var candidates = (json.data && json.data.Page && json.data.Page.media) ? json.data.Page.media : [];
+        if (candidates.length === 0) return null;
 
-            logRid(rid, 'ArmSync: Candidates ' + malIds.join(', '));
+        logRid(rid, 'ArmSync: Found ' + candidates.length + ' AniList candidates via search');
 
-            var sequence = Promise.resolve(null);
-            malIds.forEach(function (malId) {
-                sequence = sequence.then(function (found) {
-                    if (found) return found;
+        var targetDate = new Date(releaseDateStr);
 
-                    return new Promise(function (resolve) { setTimeout(resolve, 500); })
-                        .then(function () {
-                            return fetchRequest(JIKAN_BASE + '/anime/' + malId);
-                        })
-                        .then(function (res) { return res.json(); })
-                        .then(function (jikanRes) {
-                            var anime = jikanRes.data;
-                            var startStr = anime.aired && anime.aired.from ? anime.aired.from.split('T')[0] : null;
-                            var endStr = anime.aired && anime.aired.to ? anime.aired.to.split('T')[0] : null;
+        for (var i = 0; i < candidates.length; i++) {
+            var anime = candidates[i];
+            var s = anime.startDate;
+            var startStr = (s.year && s.month && s.day) ? (s.year + '-' + String(s.month).padStart(2, '0') + '-' + String(s.day).padStart(2, '0')) : null;
 
-                            var isMatch = false;
-                            if (startStr) {
-                                var startLimit = new Date(startStr);
-                                startLimit.setDate(startLimit.getDate() - 2);
-                                var startLimitStr = startLimit.toISOString().split('T')[0];
+            if (!startStr) continue;
+            var startDate = new Date(startStr);
+            var diffDays = Math.ceil(Math.abs(targetDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
-                                if (releaseDateStr >= startLimitStr) {
-                                    if (!endStr || releaseDateStr <= endStr) {
-                                        isMatch = true;
-                                    }
-                                }
-                            }
+            var isMatch = false;
+            if (anime.format === 'MOVIE' || anime.format === 'SPECIAL' || anime.episodes === 1) {
+                if (diffDays <= 2) isMatch = true;
+            } else {
+                var startLimit = new Date(startDate);
+                startLimit.setDate(startLimit.getDate() - 2);
+                if (targetDate >= startLimit) {
+                    if (anime.endDate && anime.endDate.year) {
+                        var endDate = new Date(anime.endDate.year, (anime.endDate.month || 12) - 1, (anime.endDate.day || 31));
+                        endDate.setDate(endDate.getDate() + 2);
+                        if (targetDate <= endDate) isMatch = true;
+                    } else {
+                        isMatch = true;
+                    }
+                }
+            }
 
-                            if (isMatch) {
-                                logRid(rid, 'ArmSync: Match found ID ' + malId);
-                                
-                                // For movies, we don't need to check the episodes list
-                                if (anime.type === 'Movie' || anime.episodes === 1) {
-                                    logRid(rid, 'ArmSync: Movie/Single-EP resolved');
-                                    return { malId: malId, episode: 1 };
-                                }
-
-                                return new Promise(function (resolve) { setTimeout(resolve, 500); })
-                                    .then(function () {
-                                        return fetchRequest(JIKAN_BASE + '/anime/' + malId + '/episodes');
-                                    })
-                                    .then(function (res) { return res.json(); })
-                                    .then(function (epsRes) {
-                                        var episodes = epsRes.data || [];
-                                        var targetDate = new Date(releaseDateStr);
-
-                                        var matchEp = episodes.find(function (ep) {
-                                            if (!ep.aired) return false;
-                                            var epDate = new Date(ep.aired);
-                                            var diffDays = Math.ceil(Math.abs(targetDate.getTime() - epDate.getTime()) / (1000 * 60 * 60 * 24));
-                                            return diffDays <= 2;
-                                        });
-
-                                        if (matchEp) {
-                                            logRid(rid, 'ArmSync: Episode resolved #' + matchEp.mal_id);
-                                            return { malId: malId, episode: matchEp.mal_id };
-                                        }
-                                        return null;
-                                    });
-                            }
-                            return null;
-                        })
-                        .catch(function () { return null; });
-                });
-            });
-            return sequence;
-        });
+            if (isMatch) {
+                logRid(rid, 'ArmSync: Match found AniList ID ' + anime.id + ' (' + (anime.title.english || anime.title.romaji) + ')');
+                
+                // For movies/specials, use dayIndex. For TV shows, use the episode number.
+                var isTV = anime.format !== 'MOVIE' && anime.format !== 'SPECIAL' && anime.episodes !== 1;
+                var episodeNum = (isTV && originalEpisode) ? originalEpisode : (dayIndex || 1);
+                
+                // Still try title tie-breaker if available for even better precision
+                var episodes = anime.streamingEpisodes || [];
+                if (episodes.length > 1 && episodeTitle) {
+                    var cleanTarget = episodeTitle.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    for (var j = 0; j < episodes.length; j++) {
+                        var cleanAl = (episodes[j].title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        if (cleanAl && (cleanAl.indexOf(cleanTarget) !== -1 || cleanTarget.indexOf(cleanAl) !== -1)) {
+                            episodeNum = j + 1;
+                            logRid(rid, 'ArmSync: Title tie-breaker success #' + episodeNum);
+                            break;
+                        }
+                    }
+                }
+                
+                return { alId: anime.id, episode: episodeNum, title: episodeTitle, dayIndex: dayIndex };
+            }
+        }
+        return null;
+    })
+    .catch(function(err) {
+        logRid(rid, 'ArmSync: AniList search error: ' + err.message);
+        return null;
+    });
 }
 
 function encryptKai(text) {
@@ -226,9 +259,9 @@ function decryptMegaMedia(embedUrl) {
         .then(function (json) { return json.result; });
 }
 
-// Database lookup by MAL ID
-function findInDatabase(malId) {
-    var url = DB_API + '/find?mal_id=' + malId;
+// Database lookup by AniList ID
+function findInDatabase(alId) {
+    var url = DB_API + '/find?anilist_id=' + alId;
     return fetchRequest(url)
         .then(function (res) { return res.json(); })
         .then(function (results) {
@@ -327,7 +360,10 @@ function qualityFromResolutionOrBandwidth(stream) {
 }
 
 function resolveM3U8(url, serverType, serverName) {
-    return fetchRequest(url, { headers: Object.assign({}, HEADERS, { 'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL,application/octet-stream,*/*' }) })
+    return fetchRequest(url, { 
+        skipSizeCheck: true,
+        headers: Object.assign({}, HEADERS, { 'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL,application/octet-stream,*/*' }) 
+    })
         .then(function (res) { return res.text(); })
         .then(function (content) {
             if (content.indexOf('#EXT-X-STREAM-INF') !== -1) {
@@ -510,41 +546,60 @@ function getStreams(id, mediaType, season, episode) {
     var rid = createRequestId();
     logRid(rid, 'getStreams start', { id: id, S: season, E: episode });
 
-    // Step 1: Resolve MAL ID + Episode
+    // Step 1: Resolve Metadata + Air Date
     var resolveTask;
-    if (typeof id === 'string' && id.indexOf('mal:') === 0) {
-        resolveTask = Promise.resolve({ malId: id.split(':')[1], episode: episode });
+    if (typeof id === 'string' && id.indexOf('anilist:') === 0) {
+        resolveTask = Promise.resolve({ alId: id.split(':')[1], episode: episode });
     } else {
         resolveTask = getSyncInfo(id, mediaType, season, episode)
             .then(function (syncInfo) {
-                return resolveByDate(syncInfo.imdbId, syncInfo.releaseDate, rid);
+                return resolveByDate(syncInfo.releaseDate, rid, syncInfo.title, season, syncInfo.episodeTitle, syncInfo.dayIndex, episode);
             });
     }
 
     return resolveTask
         .then(function (syncResult) {
-            if (!syncResult || !syncResult.malId) {
-                throw new Error('ArmSync: Could not match episode via air date');
+            if (!syncResult || !syncResult.alId) {
+                throw new Error('ArmSync: Could not match episode via air date (AniList Search)');
             }
             
             logRid(rid, 'using verified result', syncResult);
-            return findInDatabase(syncResult.malId).then(function (dbData) {
-                if (!dbData) throw new Error('MAL ID ' + syncResult.malId + ' not found in provider database');
+            return findInDatabase(syncResult.alId).then(function (dbData) {
+                if (!dbData) throw new Error('AniList ID ' + syncResult.alId + ' not found in provider database');
                 
                 var token = null;
-                var epStr = String(syncResult.episode);
+                var epStr = String(syncResult.episode || syncResult.dayIndex || 1); 
                 var seasons = dbData.episodes || {};
                 
-                // Exhaustive search across all season keys for the verified episode number
+                // 1. Try numeric match first (User's specific selection)
                 var keys = Object.keys(seasons);
                 for (var i = 0; i < keys.length; i++) {
                     if (seasons[keys[i]][epStr]) {
                         token = seasons[keys[i]][epStr].token;
+                        logRid(rid, 'Database: Numeric match success #' + epStr);
                         break;
                     }
                 }
 
-                if (!token) throw new Error('Episode ' + epStr + ' token not found for MAL ID ' + syncResult.malId);
+                // 2. Fallback to Title Match if numeric match fails
+                if (!token && syncResult.title) {
+                    var cleanTarget = syncResult.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    Object.keys(seasons).forEach(function(sKey) {
+                        Object.keys(seasons[sKey]).forEach(function(eKey) {
+                            var ep = seasons[sKey][eKey];
+                            var cleanDb = (ep.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                            if (cleanDb && (cleanDb.indexOf(cleanTarget) !== -1 || cleanTarget.indexOf(cleanDb) !== -1)) {
+                                if (!token) {
+                                    token = ep.token;
+                                    epStr = eKey; 
+                                    logRid(rid, 'Database: Title match success #' + eKey + ' (' + ep.title + ')');
+                                }
+                            }
+                        });
+                    });
+                }
+
+                if (!token) throw new Error('Episode ' + epStr + ' token not found for AniList ID ' + syncResult.alId);
                 
                 return runStreamFetch(token, rid).then(function (streamData) {
                     var title = dbData.info ? dbData.info.title_en : 'Anime';

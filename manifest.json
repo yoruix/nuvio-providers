@@ -412,6 +412,28 @@
       "contentLanguage": [
         "en"
       ]
+    },
+    {
+      "id": "hdhub4u",
+      "name": "HDHub4u",
+      "description": "Direct links from HDHub4u with high-speed download support",
+      "version": "1.1.0",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/hdhub4u.js",
+      "enabled": true,
+      "formats": [
+        "mkv",
+        "mp4"
+      ],
+      "logo": "https://new3.hdhub4u.fo/wp-content/uploads/2021/05/hdhub4ulogo.png",
+      "contentLanguage": [
+        "en",
+        "hin"
+      ]
     }
   ]
 }
