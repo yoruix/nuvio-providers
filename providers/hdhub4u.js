@@ -1,6 +1,6 @@
 /**
  * hdhub4u - Built from src/hdhub4u/
- * Generated: 2026-02-19T03:55:48.341Z
+ * Generated: 2026-02-19T09:22:26.023Z
  */
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -546,7 +546,8 @@ function loadExtractor(_0) {
   return __async(this, arguments, function* (url, referer = MAIN_URL) {
     try {
       const hostname = new URL(url).hostname;
-      if (url.includes("?id=") || hostname.includes("techyboy4u") || hostname.includes("gadgetsweb.xyz") || hostname.includes("cryptoinsights.site")) {
+      const isRedirect = url.includes("?id=") || hostname.includes("techyboy4u") || hostname.includes("gadgetsweb.xyz") || hostname.includes("cryptoinsights.site") || hostname.includes("bloggingvector") || hostname.includes("ampproject.org");
+      if (isRedirect) {
         const finalLink = yield getRedirectLinks(url);
         if (finalLink && finalLink !== url)
           return yield loadExtractor(finalLink, url);
@@ -573,7 +574,7 @@ function loadExtractor(_0) {
         if (href)
           return yield loadExtractor(href, url);
       }
-      return [{ source: hostname.replace(/^www\./, ""), quality: 0, url }];
+      return [];
     } catch (e) {
       return [];
     }

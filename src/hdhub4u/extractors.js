@@ -244,11 +244,19 @@ export async function hubCdnExtractor(url, referer) {
 export async function loadExtractor(url, referer = MAIN_URL) {
   try {
     const hostname = new URL(url).hostname;
-    if (url.includes("?id=") || hostname.includes("techyboy4u") || hostname.includes("gadgetsweb.xyz") || hostname.includes("cryptoinsights.site")) {
+    const isRedirect = url.includes("?id=") || 
+                       hostname.includes("techyboy4u") || 
+                       hostname.includes("gadgetsweb.xyz") || 
+                       hostname.includes("cryptoinsights.site") ||
+                       hostname.includes("bloggingvector") ||
+                       hostname.includes("ampproject.org");
+
+    if (isRedirect) {
       const finalLink = await getRedirectLinks(url);
       if (finalLink && finalLink !== url) return await loadExtractor(finalLink, url);
       return [];
     }
+    
     if (hostname.includes("hubcloud")) return await hubCloudExtractor(url, referer);
     if (hostname.includes("hubcdn")) return await hubCdnExtractor(url, referer);
     if (hostname.includes("hblinks") || hostname.includes("hubstream.dad")) return await hbLinksExtractor(url);
@@ -256,12 +264,14 @@ export async function loadExtractor(url, referer = MAIN_URL) {
     if (hostname.includes("pixeldrain")) return await pixelDrainExtractor(url);
     if (hostname.includes("streamtape")) return await streamTapeExtractor(url);
     if (hostname.includes("hdstream4u")) return [{ source: "HdStream4u", quality: 1080, url }];
+    
     if (hostname.includes("hubdrive")) {
         const res = await fetch(url, { headers: { ...HEADERS, Referer: referer } });
         const data = await res.text();
         const href = cheerio.load(data)(".btn.btn-primary.btn-user.btn-success1.m-1").attr("href");
         if (href) return await loadExtractor(href, url);
     }
-    return [{ source: hostname.replace(/^www\./, ""), quality: 0, url }];
+    
+    return [];
   } catch (e) { return []; }
 }
