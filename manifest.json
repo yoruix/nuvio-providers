@@ -41,6 +41,26 @@
       ]
     },
     {
+      "id": "animepahe",
+      "name": "AnimePahe",
+      "description": "AnimePahe (Sub/Dub)",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/animepahe.js",
+      "enabled": true,
+      "formats": [
+        "m3u8"
+      ],
+      "logo": "https://animepahe.si/favicon.ico",
+      "contentLanguage": [
+        "en"
+      ]
+    },
+    {
       "id": "uhdmovies",
       "name": "UHDMovies",
       "description": "UHD Movies streaming with multiple resolution",
@@ -364,6 +384,32 @@
       "logo": "https://cinevibe.asia/assets/favicon-32x32.png",
       "contentLanguage": [
         "en"
+      ]
+    },
+    {
+      "id": "cinemacity",
+      "name": "CinemaCity",
+      "description": "CinemaCity (Multi-Language)",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/cinemacity.js",
+      "enabled": true,
+      "formats": [
+        "mp4"
+      ],
+      "logo": "https://cinemacity.cc/favicon.ico",
+      "contentLanguage": [
+        "en",
+        "hi",
+        "ta",
+        "te",
+        "id",
+        "pl",
+        "ar"
       ]
     },
     {
