@@ -3,7 +3,7 @@
 // Extracts streaming links using TMDB ID for all VideoEasy servers
 
 const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   'Connection': 'keep-alive'
 };
 
@@ -32,7 +32,7 @@ const SERVERS = {
     moviesOnly: true
   },
   'Reyna': {
-    url: 'https://api2.videasy.net/primewire/sources-with-title',
+    url: 'https://api.videasy.net/primewire/sources-with-title',
     language: 'Original'
   },
   'Omen': {
@@ -45,6 +45,10 @@ const SERVERS = {
   },
   'Vyse': {
     url: 'https://api.videasy.net/hdmovie/sources-with-title',
+    language: 'Original'
+  },
+  'Ghost': {
+    url: 'https://api.videasy.net/primesrcme/sources-with-title',
     language: 'Original'
   },
   'Killjoy': {
@@ -68,11 +72,11 @@ const SERVERS = {
     language: 'Hindi'
   },
   'Gekko': {
-    url: 'https://api2.videasy.net/cuevana-latino/sources-with-title',
+    url: 'https://api.videasy.net/cuevana-latino/sources-with-title',
     language: 'Latin'
   },
   'Kayo': {
-    url: 'https://api2.videasy.net/cuevana-spanish/sources-with-title',
+    url: 'https://api.videasy.net/cuevana-spanish/sources-with-title',
     language: 'Spanish'
   },
   'Raze': {
@@ -80,7 +84,7 @@ const SERVERS = {
     language: 'Portuguese'
   },
   'Phoenix': {
-    url: 'https://api2.videasy.net/overflix/sources-with-title',
+    url: 'https://api.videasy.net/overflix/sources-with-title',
     language: 'Portuguese'
   },
   'Astra': {
@@ -497,23 +501,25 @@ function formatStreamsForNuvio(mediaData, serverName, serverConfig, mediaDetails
 
       // Determine stream type and create appropriate headers
       let streamType = 'unknown';
-      let headers = HEADERS;
+      let headers = Object.assign({}, HEADERS, {
+        'Referer': 'https://api.videasy.net/',
+        'Origin': 'https://player.videasy.net'
+      });
 
       if (source.url.includes('.m3u8')) {
         streamType = 'hls';
-        headers = Object.assign({}, HEADERS, {
-          'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*',
-          'Referer': 'https://videasy.net/'
+        headers = Object.assign(headers, {
+          'Accept': 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*'
         });
       } else if (source.url.includes('.mp4')) {
         streamType = 'mp4';
-        headers = Object.assign({}, HEADERS, {
+        headers = Object.assign(headers, {
           'Accept': 'video/mp4,*/*',
           'Range': 'bytes=0-'
         });
       } else if (source.url.includes('.mkv')) {
         streamType = 'mkv';
-        headers = Object.assign({}, HEADERS, {
+        headers = Object.assign(headers, {
           'Accept': 'video/x-matroska,*/*',
           'Range': 'bytes=0-'
         });
@@ -590,11 +596,13 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
 
         const serverPromises = Object.keys(SERVERS).map(serverName => {
           const serverConfig = SERVERS[serverName];
+          // Double-encode title as per Phisher's implementation
+          const doubleEncodedTitle = encodeURIComponent(encodeURIComponent(mediaDetails.title).replace(/\+/g, "%20"));
           return fetchFromServer(
             serverName,
             serverConfig,
             mediaDetails.mediaType,
-            mediaDetails.title,
+            doubleEncodedTitle,
             mediaDetails.year,
             tmdbId,
             mediaDetails.imdbId,

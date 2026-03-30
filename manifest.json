@@ -17,7 +17,7 @@
       "formats": [
         "mkv"
       ],
-      "logo": "https://4khdhub.fans/favicon.ico",
+      "logo": "https://www.google.com/s2/favicons?domain=4khdhub.fans&sz=128",
       "contentLanguage": [
         "en"
       ]
@@ -55,7 +55,7 @@
       "formats": [
         "m3u8"
       ],
-      "logo": "https://animepahe.si/favicon.ico",
+      "logo": "https://www.google.com/s2/favicons?domain=animepahe.ru&sz=128",
       "contentLanguage": [
         "en"
       ]
@@ -75,7 +75,7 @@
       "formats": [
         "mkv"
       ],
-      "logo": "https://uhdmovies.rip/wp-content/uploads/2021/03/cropped-output-onlinepngtools-1-32x32.png",
+      "logo": "https://www.google.com/s2/favicons?domain=uhdmovies.ink&sz=128",
       "contentLanguage": [
         "en"
       ]
@@ -95,7 +95,7 @@
       "formats": [
         "mkv"
       ],
-      "logo": "https://moviesmod.plus/wp-content/uploads/2022/10/moviesmod.png",
+      "logo": "https://www.google.com/s2/favicons?domain=moviesmod.day&sz=128",
       "contentLanguage": [
         "en"
       ]
@@ -218,7 +218,7 @@
       "formats": [
         "mkv"
       ],
-      "logo": "https://dvdplay.rodeo/dvdplay-icon.png",
+      "logo": "https://www.google.com/s2/favicons?domain=dvdplay.com&sz=128",
       "contentLanguage": [
         "mal",
         "tam",
@@ -381,7 +381,7 @@
         "mp4",
         "m3u8"
       ],
-      "logo": "https://cinevibe.asia/assets/favicon-32x32.png",
+      "logo": "https://www.google.com/s2/favicons?domain=cinevibe.online&sz=128",
       "contentLanguage": [
         "en"
       ]
@@ -401,7 +401,7 @@
       "formats": [
         "mp4"
       ],
-      "logo": "https://cinemacity.cc/favicon.ico",
+      "logo": "https://www.google.com/s2/favicons?domain=cinema-city.pl&sz=128",
       "contentLanguage": [
         "en",
         "hi",
@@ -475,7 +475,7 @@
         "mkv",
         "mp4"
       ],
-      "logo": "https://new3.hdhub4u.fo/wp-content/uploads/2021/05/hdhub4ulogo.png",
+      "logo": "https://www.google.com/s2/favicons?domain=hdhub4u.me.uk&sz=128",
       "contentLanguage": [
         "en",
         "hin"
@@ -496,7 +496,7 @@
       "formats": [
         "m3u8"
       ],
-      "logo": "https://allmovieland.you/logo.png",
+      "logo": "https://www.google.com/s2/favicons?domain=allmovieland.cc&sz=128",
       "contentLanguage": [
         "en",
         "hi",
@@ -519,10 +519,33 @@
       "formats": [
         "m3u8"
       ],
-      "logo": "https://panel.watchkaroabhi.com/assets/images/logo.png",
+      "logo": "https://www.google.com/s2/favicons?domain=dooflix.org&sz=128",
       "contentLanguage": [
         "en",
         "hi"
+      ]
+    },
+    {
+      "id": "movieblast",
+      "name": "MovieBlast",
+      "description": "Direct links via MovieBlast API with multi-language support",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": [
+        "movie",
+        "tv"
+      ],
+      "filename": "providers/movieblast.js",
+      "enabled": true,
+      "formats": [
+        "mp4",
+        "mkv"
+      ],
+      "logo": "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/Icons/movieblast.png",
+      "contentLanguage": [
+        "te",
+        "hi",
+        "en"
       ]
     },
     {
@@ -541,7 +564,7 @@
         "mp4",
         "m3u8"
       ],
-      "logo": "https://mycima.pics/favicon.ico",
+      "logo": "https://www.google.com/s2/favicons?domain=wecima.show&sz=128",
       "contentLanguage": [
         "ar"
       ]
