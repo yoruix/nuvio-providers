@@ -1,6 +1,6 @@
 export const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 export const TMDB_BASE_URL = "https://api.themoviedb.org/3";
-export let MAIN_URL = "https://new3.hdhub4u.fo";
+export let MAIN_URL = "https://new6.hdhub4u.fo";
 export const DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
 export const DOMAIN_CACHE_TTL = 4 * 60 * 60 * 1e3;
 

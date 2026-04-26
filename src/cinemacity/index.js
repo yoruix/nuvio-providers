@@ -13,7 +13,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         if (!animeTitle) return [];
 
         // 2. Search on CinemaCity
-        const searchUrl = `${MAIN_URL}/index.php?do=search&subaction=search&story=${encodeURIComponent(animeTitle)}`;
+        const searchUrl = `${MAIN_URL}/?do=search&subaction=search&search_start=0&full_search=0&story=${encodeURIComponent(animeTitle)}`;
         const searchHtml = await fetchText(searchUrl);
         
         // Use global cheerio provided by Nuvio

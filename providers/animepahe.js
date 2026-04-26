@@ -1,6 +1,6 @@
 /**
  * animepahe - Built from src/animepahe/
- * Generated: 2026-03-23T01:16:01.613Z
+ * Generated: 2026-04-25T11:40:26.173Z
  */
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -78,12 +78,12 @@ var __async = (__this, __arguments, generator) => {
 var import_cheerio_without_node_native = __toESM(require("cheerio-without-node-native"));
 
 // src/animepahe/constants.js
-var MAIN_URL = "https://animepahe.si";
+var MAIN_URL = "https://animepahe.pw";
 var PROXY_URL = "https://animepaheproxy.phisheranimepahe.workers.dev/?url=";
 var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
   "Cookie": "__ddg2_=1234567890",
-  "Referer": "https://animepahe.si/"
+  "Referer": "https://animepahe.pw/"
 };
 
 // src/animepahe/utils.js

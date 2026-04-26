@@ -5,9 +5,10 @@ const TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const ANILIST_URL = 'https://graphql.anilist.co';
 
-const HEADERS = {
+var HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-    'Connection': 'keep-alive'
+    'Connection': 'keep-alive',
+    'Referer': 'https://animekai.to/'
 };
 
 const API = 'https://enc-dec.app/api';
@@ -35,6 +36,30 @@ function logRid(rid, msg, extra) {
 function fetchRequest(url, options) {
     var merged = Object.assign({ method: 'GET', headers: HEADERS }, options || {});
     return fetch(url, merged).then(function (response) {
+        // Cloudflare solver integration
+        if (response.status === 403 || response.status === 503) {
+            if (typeof Cloudflare !== 'undefined' && Cloudflare.solve) {
+                console.log('[AnimeKai] Blocked by Cloudflare! Asking Nuvio to solve it for: ' + url);
+                return Cloudflare.solve(url).then(function (solvedHeaders) {
+                    console.log('[AnimeKai] Cloudflare solved! Updating headers and retrying...');
+                    if (solvedHeaders['Cookie']) HEADERS['Cookie'] = solvedHeaders['Cookie'];
+                    if (solvedHeaders['User-Agent']) HEADERS['User-Agent'] = solvedHeaders['User-Agent'];
+                    
+                    var retryOptions = Object.assign({}, merged);
+                    retryOptions.headers = Object.assign({}, retryOptions.headers || {}, {
+                        'Cookie': HEADERS['Cookie'],
+                        'User-Agent': HEADERS['User-Agent']
+                    });
+                    return fetch(url, retryOptions).then(function(retryRes) {
+                        if (!retryRes.ok) {
+                            throw new Error('HTTP ' + retryRes.status + ' after Cloudflare solve: ' + retryRes.statusText);
+                        }
+                        return retryRes;
+                    });
+                });
+            }
+        }
+
         if (!response.ok) {
             throw new Error('HTTP ' + response.status + ': ' + response.statusText);
         }
@@ -245,8 +270,13 @@ function parseHtmlViaApi(html) {
 }
 
 function decryptMegaMedia(embedUrl) {
-    var mediaUrl = embedUrl.replace('/e/', '/media/');
-    return fetchRequest(mediaUrl)
+    var mediaUrl = embedUrl.replace('/e/', '/media/').replace('/e2/', '/media/');
+    return fetchRequest(mediaUrl, {
+        headers: {
+            'User-Agent': HEADERS['User-Agent'],
+            'Referer': 'https://animekai.to/'
+        }
+    })
         .then(function (res) { return res.json(); })
         .then(function (mediaResp) { return mediaResp.result; })
         .then(function (encrypted) {
@@ -485,8 +515,22 @@ function runStreamFetch(token, rid) {
                         })
                         .then(function (decrypted) {
                             if (decrypted && decrypted.url) {
-                                logRid(rid, 'mega.media → dec-mega', { lid: lid });
-                                return decryptMegaMedia(decrypted.url)
+                                var iframesrc = decrypted.url;
+                                logRid(rid, 'AnimeKai: Fetching intermediate iframe source', { url: iframesrc });
+                                
+                                return fetchRequest(iframesrc)
+                                    .then(function (res) { return res.text(); })
+                                    .then(function (html) {
+                                        // Extract the actual iframe src from the page
+                                        var iframeMatch = html.match(/<iframe[^>]+src=["']([^"']+)["']/i);
+                                        var finalIframeUrl = iframeMatch ? iframeMatch[1] : iframesrc;
+                                        
+                                        // Ensure absolute URL
+                                        if (finalIframeUrl.indexOf('//') === 0) finalIframeUrl = 'https:' + finalIframeUrl;
+                                        
+                                        logRid(rid, 'mega.media → dec-mega', { lid: lid, finalUrl: finalIframeUrl });
+                                        return decryptMegaMedia(finalIframeUrl);
+                                    })
                                     .then(function (mediaData) {
                                         var srcs = [];
                                         if (mediaData && mediaData.sources) {

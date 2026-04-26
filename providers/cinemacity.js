@@ -1,6 +1,6 @@
 /**
  * cinemacity - Built from src/cinemacity/
- * Generated: 2026-03-23T02:50:26.034Z
+ * Generated: 2026-04-26T06:45:39.580Z
  */
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -101,7 +101,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
       const animeTitle = mediaInfo.title || mediaInfo.name;
       if (!animeTitle)
         return [];
-      const searchUrl = `${MAIN_URL}/index.php?do=search&subaction=search&story=${encodeURIComponent(animeTitle)}`;
+      const searchUrl = `${MAIN_URL}/?do=search&subaction=search&search_start=0&full_search=0&story=${encodeURIComponent(animeTitle)}`;
       const searchHtml = yield fetchText(searchUrl);
       const $search = cheerio.load(searchHtml);
       let mediaUrl = null;

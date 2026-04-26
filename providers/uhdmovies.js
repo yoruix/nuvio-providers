@@ -6,7 +6,7 @@
 
 var cheerio = require("cheerio-without-node-native");
 
-var DOMAIN = "https://uhdmovies.rip";
+var DOMAIN = "https://uhdmovies.pink";
 var DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
 var DOMAIN_CACHE = { url: DOMAIN, ts: 0 };
 
