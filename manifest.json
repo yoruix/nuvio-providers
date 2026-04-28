@@ -1,5 +1,30 @@
 [
   {
+    "id": "viu",
+    "name": "Viu",
+    "description": "Arabic, Asian Drama & Turkish series streaming provider",
+    "version": "1.0.0",
+    "author": "Adapted from Cloudstream3 VIUPlugin",
+    "supportedTypes": [
+      "movie",
+      "tv"
+    ],
+    "filename": "providers/viu.js",
+    "enabled": true,
+    "logo": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/38/Viu_logo.svg/512px-Viu_logo.svg.png",
+    "contentLanguage": [
+      "ar",
+      "en"
+    ],
+    "formats": [
+      "mp4",
+      "mkv"
+    ],
+    "limited": false,
+    "disabledPlatforms": [],
+    "supportsExternalPlayer": true
+  },
+  {
     "id": "template-provider",
     "name": "Template Provider",
     "description": "A starter template for creating Nuvio providers.",
